@@ -15,7 +15,9 @@ from tinkoff.invest import (
 )
 
 # === Настройки ===
-TINKOFF_TOKEN = "ваш_токен_API_здесь"  # ← Замени!
+TINKOFF_TOKEN = os.getenv("TINKOFF_TOKEN")
+if not TINKOFF_TOKEN:
+    raise RuntimeError("TINKOFF_TOKEN не установлен в переменных окружения")
 USE_SANDBOX = True  # True = тестовый режим (рекомендуется сначала)
 
 TELEGRAM_TOKEN = "ваш_токен_бота_здесь"  # ← Замени!
@@ -168,3 +170,4 @@ def home():
 if __name__ == "__main__":
     logger.info("Запуск бота на локальном сервере...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
