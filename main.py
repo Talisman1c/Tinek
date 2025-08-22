@@ -4,16 +4,15 @@ from fastapi.responses import JSONResponse
 import uvicorn
 import requests
 import os
+import json
+import logging
 from typing import Dict, Any
 from tinkoff.invest import (
     Client,
     RequestError,
     OrderDirection,
-    OrderType,
-    PostOrderResponse,
-    SandboxService,
+    OrderType
 )
-import logging
 
 # === Настройки ===
 TINKOFF_TOKEN = "ваш_токен_API_здесь"  # ← Замени!
@@ -44,40 +43,56 @@ def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
         requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message}, timeout=5)
+        logger.info(f"Telegram сообщение отправлено: {message[:50]}...")
     except Exception as e:
-        logger.error(f"Telegram error: {e}")
+        logger.error(f"Ошибка отправки в Telegram: {e}")
 
 # === Инициализация Sandbox (один раз!) ===
 @app.get("/init-sandbox")
 def init_sandbox():
     if not USE_SANDBOX:
-        return {"status": "error", "msg": "Sandbox выключен"}
+        error_msg = "Sandbox выключен в настройках"
+        logger.warning(error_msg)
+        send_telegram(f"⚠️ {error_msg}")
+        return {"status": "error", "msg": error_msg}
     
     try:
         with Client(TINKOFF_TOKEN) as client:
             # Регистрируем счёт (один раз)
-            client.sandbox.sandbox_register_post()
+            try:
+                client.sandbox.sandbox_register_post()
+                logger.info("Песочница зарегистрирована")
+            except Exception as e:
+                logger.warning(f"Песочница уже зарегистрирована или ошибка: {str(e)}")
+            
             # Выдаем 1_000_000 руб. тестовых денег
             client.sandbox.sandbox_currencies_balance_post(
                 balance=1_000_000,
                 currency="RUB"
             )
-            # Можно добавить USD, EUR и т.д.
-            return {"status": "Sandbox инициализирован с 1 млн RUB"}
+            msg = "✅ Sandbox инициализирован с 1 млн RUB"
+            logger.info(msg)
+            send_telegram(msg)
+            return {"status": "ok", "message": "Sandbox инициализирован с 1 млн RUB"}
     except Exception as e:
-        return {"error": str(e)}
+        error_msg = f"❌ Ошибка инициализации Sandbox: {str(e)}"
+        logger.error(error_msg)
+        send_telegram(error_msg)
+        return {"status": "error", "message": str(e)}
 
 # === Вебхук от TradingView ===
 @app.post("/webhook")
 async def tradingview_webhook(request: Request):
     try:
-        data: dict = await request.json()
+        data = await request.json()
     except:
         try:
             # На случай, если приходит как form или строка
             body = await request.body()
             data = json.loads(body.decode())
-        except:
+        except Exception as e:
+            logger.error(f"Ошибка парсинга JSON: {str(e)}")
+            send_telegram("❌ Ошибка: Невалидный JSON")
             raise HTTPException(status_code=400, detail="Invalid JSON")
 
     logger.info(f"Получен сигнал: {data}")
@@ -87,11 +102,15 @@ async def tradingview_webhook(request: Request):
     lots = int(data.get("lots", 1))
 
     if action not in ["buy", "sell"]:
-        send_telegram("❌ Ошибка: action должно быть 'buy' или 'sell'")
+        error_msg = f"❌ Ошибка: action должно быть 'buy' или 'sell', получено: {action}"
+        logger.error(error_msg)
+        send_telegram(error_msg)
         raise HTTPException(status_code=400, detail="Invalid action")
 
     if ticker not in FIGI_MAP:
-        send_telegram(f"❌ Неизвестный тикер: {ticker}")
+        error_msg = f"❌ Неизвестный тикер: {ticker}"
+        logger.error(error_msg)
+        send_telegram(error_msg)
         raise HTTPException(status_code=400, detail="Unknown ticker")
 
     figi = FIGI_MAP[ticker]
@@ -99,10 +118,9 @@ async def tradingview_webhook(request: Request):
     # === Выполнение ордера через Tinkoff API ===
     try:
         with Client(TINKOFF_TOKEN) as client:
-            account_id = (
-                client.users.get_accounts().accounts[0].id
-            )
-
+            accounts = client.users.get_accounts()
+            account_id = accounts.accounts[0].id
+            
             direction = (
                 OrderDirection.ORDER_DIRECTION_BUY
                 if action == "buy"
@@ -110,7 +128,7 @@ async def tradingview_webhook(request: Request):
             )
 
             # Рыночный ордер
-            response: PostOrderResponse = client.orders.post_order(
+            response = client.orders.post_order(
                 figi=figi,
                 quantity=lots,
                 direction=direction,
@@ -131,14 +149,14 @@ async def tradingview_webhook(request: Request):
 
     except RequestError as api_ex:
         error_msg = f"❌ Ошибка API: {api_ex}"
-        send_telegram(error_msg)
         logger.error(error_msg)
+        send_telegram(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
     except Exception as e:
-        error_msg = f"❌ Ошибка: {str(e)}"
-        send_telegram(error_msg)
+        error_msg = f"❌ Неизвестная ошибка: {str(e)}"
         logger.error(error_msg)
+        send_telegram(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
 # === Проверка подключения ===
@@ -148,4 +166,5 @@ def home():
 
 # Запуск (для локального теста)
 if __name__ == "__main__":
+    logger.info("Запуск бота на локальном сервере...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
