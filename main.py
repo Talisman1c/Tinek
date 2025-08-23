@@ -136,7 +136,8 @@ async def tradingview_webhook(request: Request):
                 direction=direction,
                 order_type=OrderType.ORDER_TYPE_MARKET,
                 account_id=account_id,
-                order_id=f"auto_{action}_{ticker}_{os.getpid()}"
+                import time
+                order_id = f"auto_{action}_{ticker}_{int(time.time() * 1000)}"
             )
 
             status = "✅ КУПЛЕНО" if action == "buy" else "✅ ПРОДАНО"
@@ -170,4 +171,20 @@ def home():
 if __name__ == "__main__":
     logger.info("Запуск бота на локальном сервере...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+@app.get("/reset-sandbox")
+def reset_sandbox():
+    if not USE_SANDBOX:
+        return {"status": "error", "msg": "Sandbox выключен"}
+
+    with Client(TINKOFF_TOKEN) as client:
+        # Удаляем текущий счёт
+        client.sandbox.sandbox_remove_post()
+        # Создаём новый
+        client.sandbox.sandbox_register_post()
+        # Пополняем
+        client.sandbox.sandbox_currencies_balance_post(balance=1_000_000, currency="RUB")
+        return {"status": "Sandbox сброшен и готов к тестам"}
+
 
