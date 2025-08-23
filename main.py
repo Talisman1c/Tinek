@@ -95,7 +95,7 @@ def init_sandbox():
         error_msg = f"❌ Ошибка инициализации Sandbox: {e}"
         logger.error(error_msg)
         send_telegram(error_msg)
-        return {"status": "error", "message": str(e)}}
+        return {"status": "error", "message": str(e)}
 
 # === Сброс sandbox (удобно для тестов) ===
 @app.get("/reset-sandbox")
@@ -214,3 +214,4 @@ def home():
 if __name__ == "__main__":
     logger.info("🚀 Запуск бота на локальном сервере...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
