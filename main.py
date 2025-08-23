@@ -173,18 +173,6 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
-@app.get("/reset-sandbox")
-def reset_sandbox():
-    if not USE_SANDBOX:
-        return {"status": "error", "msg": "Sandbox выключен"}
 
-    with Client(TINKOFF_TOKEN) as client:
-        # Удаляем текущий счёт
-        client.sandbox.sandbox_remove_post()
-        # Создаём новый
-        client.sandbox.sandbox_register_post()
-        # Пополняем
-        client.sandbox.sandbox_currencies_balance_post(balance=1_000_000, currency="RUB")
-        return {"status": "Sandbox сброшен и готов к тестам"}
 
 
